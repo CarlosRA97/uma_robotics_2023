@@ -1,31 +1,37 @@
 export containerId=ros
-sudo podman inspect $containerId 2>&1 > /dev/null
-if [ $? -ne 0 ]; then
+export imageName="docker.io/carlosra97/ros_uma_robotics:latest"
 
-sudo podman run -it \
-    --user=$(id -u $USER):$(id -g $USER)  \
-    --env="DISPLAY" \
-    --name="$containerId" \
-    --workdir="/home/$USER" \
-    --volume="/home/$USER:/home/$USER" \
-    --volume="/etc/group:/etc/group:ro" \
-    --volume="/etc/passwd:/etc/passwd:ro" \
-    --volume="/etc/shadow:/etc/shadow:ro" \
-    --volume="/etc/sudoers.d:/etc/sudoers.d:ro" \
-    --volume="/tmp/.X11-unix:/tmp/.X11-unix:rw" \
+function run_init_ros {
+    sudo podman run -itd \
+        --volume="/tmp/.X11-unix:/tmp/.X11-unix:rw" \
+        --env="DISPLAY" \
+        --privileged \
+        --name="$containerId" \
+        $imageName \
+        bash
+
+    xhost +local:`sudo sudo podman inspect --format='{{ .Config.Hostname }}' $containerId`
+}
+
+sudo podman inspect $containerId 2>&1 > /dev/null
+
+if [ $? -ne 0 ]; then
+    run_init_ros
+fi
+
+function create_ros_image {
+    containerId=$(sudo podman run -itd \
+    --workdir="/root" \
     docker.io/osrf/ros:melodic-desktop-full \
-    sh
+    sh)
 
     sudo podman cp catkin_ws/ $containerId:/catkin_ws
 
-    sudo podman start $containerId && sudo podman exec $containerId bash -c "source /ros_entrypoint.sh && cd /catkin_ws/src && catkin_init_workspace && cd .. && catkin_make && exit"
+    sudo podman start $containerId && sudo podman exec $containerId bash -c "source /ros_entrypoint.sh && cd /catkin_ws/src && catkin_init_workspace && cd .. && catkin_make && echo '[ -f /catkin_ws/devel/setup.bash ] && source /catkin_ws/devel/setup.bash' >> /root/.bashrc && exit"
 
-    echo '[ -f "/catkin_ws/devel/setup.bash" ] && source "/catkin_ws/devel/setup.bash"' >> $HOME/.bashrc
+    sudo podman commit $containerId $imageName
+    sudo podman stop $containerId && sudo podman rm $containerId
+    sudo podman push $imageName
+}
 
-    xhost +local:`sudo sudo podman inspect --format='{{ .Config.Hostname }}' $containerId`
-fi
-
-sudo podman start $containerId
-wait
-echo "call on source /catkin_ws/devel/setup.bash to setup env variables once in the container"
-sudo podman exec -it $containerId bash
+sudo podman start $containerId && sudo podman exec -it $containerId bash
