@@ -2,38 +2,55 @@
 export containerId=ros
 export imageName="docker.io/carlosra97/ros_uma_robotics:latest"
 
-function run_init_ros {
-    sudo podman run -itd \
+function run_ros {
+    docker run -itd \
         --volume="/tmp/.X11-unix:/tmp/.X11-unix:rw" \
+        --volume="$(pwd)/catkin_ws/src/robotic_explorer:/catkin_ws/src/robotic_explorer" \
         --env="DISPLAY" \
         --privileged \
         --name="$containerId" \
         $imageName \
         bash
-
-    xhost +local:`sudo sudo podman inspect --format='{{ .Config.Hostname }}' $containerId`
 }
 
-sudo podman inspect $containerId &> /dev/null
+function run_rootless_ros {
+    # --user=$(id -u $USER):$(id -g $USER) \
+    docker run -itd \
+        --userns=keep-id \
+        --volume="/etc/group:/etc/group:ro" \
+        --volume="/etc/passwd:/etc/passwd:ro" \
+        --volume="/etc/shadow:/etc/shadow:ro" \
+        --volume="/etc/sudoers.d:/etc/sudoers.d:ro" \
+        --volume="/home/$USER:/home/$USER" \
+        --workdir="/catkin_ws/src/robotic_explorer" \
+        -e DISPLAY \
+        --volume="/tmp/.X11-unix:/tmp/.X11-unix:rw" \
+        --volume="$(pwd)/catkin_ws/src/robotic_explorer:/catkin_ws/src/robotic_explorer" \
+        --privileged \
+        --name="$containerId" \
+        $imageName \
+        bash
+}
 
-if [ $? -ne 0 ]; then
-    run_init_ros
-fi
+function play_ros {
+    sudo podman kube play $containerId-pod.yml
+}
 
 function create_ros_image {
     sudo podman build . -t $imageName
-#     containerId=$(sudo podman run -itd \
-#     --workdir="/root" \
-#     docker.io/osrf/ros:melodic-desktop-full \
-#     sh)
-#
-#     sudo podman cp catkin_ws/ $containerId:/catkin_ws
-#
-#     sudo podman start $containerId && sudo podman exec $containerId bash -c "source /ros_entrypoint.sh && cd /catkin_ws/src && catkin_init_workspace && cd .. && catkin_make && echo '[ -f /catkin_ws/devel/setup.bash ] && source /catkin_ws/devel/setup.bash' >> /root/.bashrc && exit"
-#
-#     sudo podman commit $containerId $imageName
-#     sudo podman stop $containerId && sudo podman rm $containerId
     sudo podman push $imageName
 }
 
-sudo podman start $containerId && sudo podman exec -it $containerId bash
+#sudo podman pod exists $containerId-pod
+docker inspect $containerId &> /dev/null
+
+if [ $? -ne 0 ]; then
+    run_rootless_ros
+fi
+
+#xhost +local:`sudo podman pod inspect --format='{{ .Hostname }}' $containerId-pod`
+#sudo podman pod start $containerId-pod && sudo podman exec -it $containerId-pod-$containerId bash
+docker start $containerId
+xhost +local:`docker inspect $containerId --format="{{ .Config.Hostname }}"`
+alias kdevelop='docker exec -it $containerId kdevelop'
+alias ros='docker exec -it $containerId bash'

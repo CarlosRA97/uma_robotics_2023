@@ -8,6 +8,8 @@ RUN bash -c "source /ros_entrypoint.sh && \
     cd .. && \
     catkin_make"
 
+RUN apt update && apt install -y kdevelop kdevelop-python
+
 WORKDIR /root
 
 RUN echo '[ -f /catkin_ws/devel/setup.bash ] && source /catkin_ws/devel/setup.bash' >> /root/.bashrc
